@@ -66,10 +66,13 @@ class ScrollPaySystem {
     updateScrollState() {
         if (this.scrollingEnabled && this.freeScrollsRemaining > 0) {
             // Enable scrolling
-            window.scrollTo = this.originalScrollTo;
-            window.scroll = this.originalScroll;
-            window.scrollBy = this.originalScrollBy;
+            window.scrollTo = this.originalScrollTo || window.scrollTo;
+            window.scroll = this.originalScroll || window.scroll;
+            window.scrollBy = this.originalScrollBy || window.scrollBy;
             document.body.style.overflowY = 'auto';
+            
+            // Add scroll bar tracking for all scroll methods
+            this.addScrollBarTracking();
             this.updateScrollCounter();
         } else {
             // Disable scrolling
@@ -77,21 +80,73 @@ class ScrollPaySystem {
             window.scroll = () => {};
             window.scrollBy = () => {};
             document.body.style.overflowY = 'hidden';
+            
+            // Remove scroll bar tracking
+            this.removeScrollBarTracking();
             this.hideScrollCounter();
+        }
+    }
+
+    addScrollBarTracking() {
+        // Track scroll bar usage and general scroll events with better mobile handling
+        if (!this.scrollBarHandler) {
+            this.scrollBarHandler = (e) => this.handleScrollBarUsage(e);
+            window.addEventListener('scroll', this.scrollBarHandler, { passive: true });
+        }
+    }
+
+    removeScrollBarTracking() {
+        if (this.scrollBarHandler) {
+            window.removeEventListener('scroll', this.scrollBarHandler);
+            this.scrollBarHandler = null;
+        }
+    }
+
+    handleScrollBarUsage(e) {
+        // This handles scroll events from scroll bar usage and mobile scrolling
+        if (this.scrollingEnabled && this.freeScrollsRemaining > 0) {
+            // Use the same debouncing logic as other scroll events
+            clearTimeout(this.scrollBarDebounceTimeout);
+            
+            this.scrollBarDebounceTimeout = setTimeout(() => {
+                if (this.scrollingEnabled && this.freeScrollsRemaining > 0) {
+                    this.freeScrollsRemaining--;
+                    this.updateScrollCounter();
+                    
+                    if (this.freeScrollsRemaining <= 0) {
+                        this.scrollingEnabled = false;
+                        this.updateScrollState();
+                        this.showPaywallAgain();
+                    }
+                }
+            }, 200); // Slightly longer debounce for scroll bar to handle smooth scrolling
         }
     }
 
     handleScroll(e) {
         if (this.scrollingEnabled && this.freeScrollsRemaining > 0) {
-            // Allow this scroll and decrement counter
-            this.freeScrollsRemaining--;
-            this.updateScrollCounter();
+            // Debounce scroll events to prevent rapid credit depletion on mobile
+            clearTimeout(this.scrollDebounceTimeout);
             
-            if (this.freeScrollsRemaining <= 0) {
-                this.scrollingEnabled = false;
-                this.updateScrollState();
-                this.showPaywallAgain();
+            // Allow the scroll to happen immediately
+            if (e && e.preventDefault) {
+                // Don't prevent default since we want to allow this scroll
             }
+            
+            // Debounce the credit deduction
+            this.scrollDebounceTimeout = setTimeout(() => {
+                if (this.scrollingEnabled && this.freeScrollsRemaining > 0) {
+                    this.freeScrollsRemaining--;
+                    this.updateScrollCounter();
+                    
+                    if (this.freeScrollsRemaining <= 0) {
+                        this.scrollingEnabled = false;
+                        this.updateScrollState();
+                        this.showPaywallAgain();
+                    }
+                }
+            }, 150); // 150ms debounce - groups rapid mobile scroll events
+            
             return true;
         } else {
             return this.preventScroll(e);
